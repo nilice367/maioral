@@ -10,7 +10,6 @@
 <body>
 <header>
   <h1>Organizador Maioral</h1>
-  <span class="lock" title="Este arquivo funciona sem internet. Os PDFs são lidos apenas na memória do navegador e nada é enviado para nenhum servidor."></span>
   <div class="grow"></div>
   <input type="text" id="nome" placeholder="Nome completo do candidato">
   <label class="chk"><input type="checkbox" id="capa"> Capa com checklist</label>
@@ -23,6 +22,23 @@
 </header>
 <div class="layout">
   <aside>
+    <details class="person" id="person">
+      <summary><span>Dados do candidato</span><button id="btnCopyPerson" type="button">Copiar</button></summary>
+      <label>Nome completo<input type="text" id="p_nome" autocomplete="off"><small id="pi_nome"></small></label>
+      <label>CPF<input type="text" id="p_cpf" autocomplete="off"><small id="pi_cpf"></small></label>
+      <label>Data de nascimento<input type="text" id="p_nasc" autocomplete="off"><small id="pi_nasc"></small></label>
+      <label>Nome da mãe<input type="text" id="p_mae" autocomplete="off"><small id="pi_mae"></small></label>
+    </details>
+    <div class="vaga">
+      <b>Vaga</b>
+      <div class="vaga-row">
+        <label>Posto<input type="text" id="v_posto" list="dl_posto" placeholder="Ex.: Vigilante" autocomplete="off"></label>
+        <label>Empresa<input type="text" id="v_empresa" list="dl_empresa" placeholder="Ex.: Fornecedora" autocomplete="off"></label>
+        <label>Cidade<input type="text" id="v_cidade" list="dl_cidade" placeholder="Ex.: Fortaleza" autocomplete="off"></label>
+      </div>
+      <datalist id="dl_posto"></datalist><datalist id="dl_empresa"></datalist><datalist id="dl_cidade"></datalist>
+    </div>
+    <div class="listbar"><div><small>Lista em uso</small><b id="listName"></b></div><button id="btnList">Mudar lista</button></div>
     <div class="summary" id="summary">Nenhum arquivo carregado.</div>
     <h2>Clique para classificar a(s) página(s) selecionada(s)</h2>
     <div id="cats"></div>
@@ -30,14 +46,39 @@
   <main>
     <div class="toolbar">
       <div class="tabs"><button data-v="classify" class="on">1 · Classificar páginas</button><button data-v="final">2 · Ordem de impressão</button></div>
-      <span class="hint">Selecione e digite o nº: <kbd>4</kbd> RG · <kbd>1</kbd><kbd>0</kbd> CTPS · <kbd>X</kbd> descartar · <kbd>R</kbd> girar · <kbd>Enter</kbd> ampliar · <kbd>←</kbd><kbd>→</kbd> navegar</span>
+      <button id="btnConfer" disabled>⚠ Conferir (0)</button>
+      <span class="hint">Selecione e digite o nº do documento · <kbd>V</kbd> está certo · <kbd>X</kbd> descartar · <kbd>R</kbd> girar · <kbd>Enter</kbd> ampliar · <kbd>←</kbd><kbd>→</kbd> navegar</span>
       <span id="progress"></span>
     </div>
+    <div id="pbar" hidden><i></i></div>
     <div id="scroller"><div id="grid"></div></div>
   </main>
 </div>
-<div id="modal"><div class="bar"><button id="mPrev">←</button><span id="mInfo"></span><button id="mNext">→</button><button id="mRot">Girar (R)</button><button id="mClose">Fechar (Esc)</button></div><div id="mBody"></div></div>
+<div id="modal"><div class="bar"><button id="mPrev">←</button><span id="mInfo"></span><button id="mNext">→</button><button id="mOk">✓ Está certo (V)</button><button id="mRot">Girar (R)</button><button id="mClose">Fechar (Esc)</button></div><div id="mBody"></div></div>
 <div id="toast"></div>
+<div id="listModal"><div class="lm" role="dialog" aria-label="Listas de documentos">
+  <div class="lm-head"><h2>Listas de documentos</h2><button id="lmClose" title="Fechar">✕</button></div>
+  <div class="lm-row">
+    <label>Lista <select id="lmSelect"></select></label>
+    <button id="lmNew">+ Nova lista</button>
+    <button id="lmImport">Carregar de PDF, foto ou .txt</button>
+    <input type="file" id="lmFile" accept="application/pdf,image/*,.txt,text/plain" hidden>
+  </div>
+  <label class="lm-name">Nome da lista <input type="text" id="lmName"></label>
+  <div class="lm-cols">
+    <label class="lm-col">Documentos, um por linha, na ordem de impressão
+      <textarea id="lmText" spellcheck="false"></textarea>
+      <span class="hint">Escreva "(se houver)" nos opcionais. Um endereço na linha vira o link "emitir" e sai na capa. Com dois endereços, o 1º é o do site e o 2º o da capa.</span>
+    </label>
+    <div class="lm-col">Como o programa vai entender<div id="lmPreview"></div></div>
+  </div>
+  <div id="lmMsg"></div>
+  <div class="lm-foot">
+    <button id="lmDelete">Excluir lista</button><button id="lmReset">Restaurar lista padrão</button><button id="lmExport">Baixar lista (.txt)</button>
+    <div class="grow"></div>
+    <button id="lmCancel">Cancelar</button><button id="lmSave" class="primary">Salvar e usar</button>
+  </div>
+</div></div>
 <div id="lock"><form id="lockForm" autocomplete="off">
   <h2>Organizador da Maioral</h2>
   <p>Digite a senha flopade</p>
