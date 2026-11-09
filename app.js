@@ -80,7 +80,11 @@ let sources = [], items = [], sel = new Set(), anchor = null, view = 'classify',
 const $ = s => document.querySelector(s);
 const grid = $('#grid');
 
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove('on'),2200); }
+function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove('on'),ms); }
+async function copyText(txt){
+  try{ await navigator.clipboard.writeText(txt); }
+  catch(err){ const t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+}
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ---------- carregar arquivos ---------- */
@@ -89,8 +93,8 @@ async function addFiles(fileList){
   if(!files.length) return;
   if(!$('#nome').value.trim() && !askedName){
     askedName=true;
-    const v=prompt('Qual é o nome completo do candidato?\n\nEle é usado para separar os documentos do candidato (certidão de nascimento, cartão de vacina e CPF) dos documentos dos filhos.');
-    if(v) $('#nome').value=v.trim();
+    const v=prompt('Qual é o nome completo do candidato?\n\nEle é usado para separar os documentos do candidato (certidão de nascimento, cartão de vacina e CPF) dos documentos dos filhos.\n\nSe deixar em branco, o programa tenta identificar o nome pelos documentos.');
+    if(v && v.trim()){ $('#nome').value=v.trim(); nameTyped=true; }
   }
   loading++; updateButtons();
   for(const f of files){
@@ -405,6 +409,7 @@ function otherPerson(it, typed){
   return names.length>0 && !names.some(n=>{ const o=findOwner(n,typed); return o.own || o.child; });
 }
 function extractPerson(){
+  if(!readData) return {}; // leitura dos dados desligada pelo botão "Ler"
   const typeOf=it=>it.manual ? it.mtype : it.type;
   const votes={nome:{}, cpf:{}, nasc:{}, mae:{}};
   const vote=(f,v,w,it,sure)=>{
@@ -461,10 +466,25 @@ function extractPerson(){
   }
   return out;
 }
+// botão "Ler": liga/desliga a leitura de nome, CPF, nascimento e mãe (fica guardado neste navegador)
+const READ_KEY='rh-organizador-ler-dados';
+let readData = (()=>{ try{ return localStorage.getItem(READ_KEY)!=='0'; }catch(e){ return true; } })();
+function setReadData(v){
+  readData=v;
+  try{ localStorage.setItem(READ_KEY, v?'1':'0'); }catch(e){}
+  if(!v){ personEdit={}; const n=$('#nome'); if(n.classList.contains('auto')){ n.value=''; n.classList.remove('auto'); n.title=''; reviewSet(); } }
+  render();
+}
 function renderPerson(){
+  $('#readData').checked=readData;
+  $('#person').classList.toggle('off', !readData);
+  $('#personOff').hidden=readData;
+  $('#btnCopyPerson').disabled=!readData;
   const p=extractPerson();
   for(const [f] of PERSON_FIELDS){
     const inp=$('#p_'+f), info=$('#pi_'+f), r=p[f], edited=personEdit[f]!=null;
+    inp.disabled=!readData;
+    if(!readData){ inp.value=''; inp.classList.remove('warn'); info.textContent=''; continue; }
     if(document.activeElement!==inp && !edited) inp.value=r ? r.v : '';
     inp.classList.toggle('warn', !edited && !!r && !r.sure);
     const c=r && r.it.cat && catByKey(r.it.cat);
@@ -518,9 +538,21 @@ async function readAll(){
   for(const w of workers) w.terminate();
   reading=false; loading--; setProgress('');
   if(gen!==readGen){ updateButtons(); if(items.some(x=>!doneRead(x))) readAll(); return; }
+  autoName();
   updateButtons(); render();
   const pend=items.filter(i=>i.cat==null).length, chk=items.filter(i=>i.check).length;
   if(items.length) toast(`Leitura concluída: ${chk} para conferir, ${pend} sem classificação`);
+}
+// nome do candidato vazio e não digitado por você: usa o nome lido nos documentos (fica amarelo para conferir)
+let nameTyped=false;
+function autoName(){
+  const n=$('#nome');
+  if(!readData || nameTyped || n.value.trim()) return;
+  const v=personEdit.nome ?? (extractPerson().nome || {}).v;
+  if(!v) return;
+  n.value=v; n.classList.add('auto'); n.classList.remove('need');
+  n.title='Nome identificado pelos documentos: confira';
+  reviewSet(); // com o nome, separa de novo os documentos do candidato e dos filhos
 }
 
 /* ---------- ordem ---------- */
@@ -570,7 +602,7 @@ function render(){
   const missing = CATS.filter(c=>!c.opt && !m[c.k]);
   $('#summary').innerHTML = !items.length ? 'Nenhum arquivo carregado.' :
     `<b>${items.length}</b> páginas · <b style="color:${pend?'var(--warn)':'var(--ok)'}">${pend}</b> sem classificação · <b style="color:${items.some(i=>i.check)?'var(--warn)':'var(--ok)'}">${items.filter(i=>i.check).length}</b> para conferir (⚠)<br>`+
-    (missing.length ? `<span style="color:var(--warn)">Faltando ${missing.length} obrigatório(s): ${missing.map(c=>c.k).join(', ')}</span>` : '<span style="color:var(--ok)">✓ Todos os obrigatórios presentes</span>');
+    (missing.length ? `<button type="button" class="missbtn" id="btnMiss">⚠ Faltam ${missing.length} documento(s) · ver e montar mensagem</button>` : '<span style="color:var(--ok)">✓ Todos os obrigatórios presentes</span>');
   renderPerson();
   const pendN = items.filter(needCheck).length, bc = $('#btnConfer');
   bc.textContent = conferMode ? `Mostrar todas as páginas (${pendN} para conferir)` : `⚠ Conferir (${pendN})`;
@@ -661,21 +693,25 @@ function scrollToSel(){ const el = grid.querySelector(`.card[data-id="${anchor}"
 /* ---------- eventos ---------- */
 $('#btnAdd').onclick = () => $('#file').click();
 $('#nome').addEventListener('change', ()=>{ reviewSet(); refresh(); });
-$('#nome').addEventListener('input', e=>{ if(e.target.value.trim()) e.target.classList.remove('need'); });
+$('#nome').addEventListener('input', e=>{ nameTyped=true; e.target.classList.remove('auto'); e.target.title=''; });
+for(const id of ['#nome','#v_posto','#v_empresa','#v_cidade']) $(id).addEventListener('input', e=>{ if(e.target.value.trim()) e.target.classList.remove('need'); });
 $('#file').onchange = e => { addFiles(e.target.files); e.target.value=''; };
 $('#btnClear').onclick = () => {
   if(items.length && !confirm('Limpar todas as páginas? (Os arquivos originais não são alterados.)')) return;
   readGen++;
   for(const s of sources){ if(s.pjs) s.pjs.destroy(); if(s.url) URL.revokeObjectURL(s.url); }
-  sources=[]; items=[]; sel.clear(); anchor=null; $('#nome').value=''; askedName=false; personEdit={}; conferMode=false; closeModal(); refresh();
+  sources=[]; items=[]; sel.clear(); anchor=null; $('#nome').value=''; $('#nome').classList.remove('auto'); nameTyped=false; askedName=false; personEdit={}; conferMode=false; closeModal(); refresh();
 };
 for(const [f] of PERSON_FIELDS) $('#p_'+f).addEventListener('input', e=>{ personEdit[f]=e.target.value.trim() ? e.target.value : null; renderPerson(); });
 $('#person').addEventListener('click', e=>{ const a=e.target.closest('a[data-id]'); if(!a) return; e.preventDefault(); sel=new Set([+a.dataset.id]); anchor=+a.dataset.id; openModal(anchor); render(); });
+$('#readToggle').addEventListener('click', e=>{
+  e.preventDefault(); e.stopPropagation(); // fica no título do quadro: não abre/fecha o quadro
+  setReadData(!readData);
+  toast(readData ? 'Leitura dos dados do candidato ligada' : 'Leitura dos dados desligada: digite o nome do candidato', 4000);
+});
 $('#btnCopyPerson').onclick = async e=>{
   e.preventDefault(); // o botão fica no título do quadro: não abre/fecha o quadro
-  const txt=[...PERSON_FIELDS.map(([f,l])=>`${l}: ${$('#p_'+f).value.trim()}`), ...VAGA_FIELDS.map(([f,l])=>`${l}: ${vaga(f)}`)].join('\n');
-  try{ await navigator.clipboard.writeText(txt); }
-  catch(err){ const t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+  await copyText([...PERSON_FIELDS.map(([f,l])=>`${l}: ${$('#p_'+f).value.trim()}`), ...VAGA_FIELDS.map(([f,l])=>`${l}: ${vaga(f)}`)].join('\n'));
   toast('Dados copiados');
 };
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ view=b.dataset.v; document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
@@ -729,7 +765,7 @@ function flushBuf(){
   if(c) assign(c.k); else toast('Não existe documento nº '+s);
 }
 document.addEventListener('keydown', e=>{
-  if(locked || listOpen || e.target.matches('input,textarea,select')) return;
+  if(locked || listOpen || missOpen || e.target.matches('input,textarea,select')) return;
   if(e.ctrlKey||e.metaKey){ if(e.key==='a'){ e.preventDefault(); sel=new Set(visibleOrder().map(i=>i.id)); render(); } return; }
   if(/^[0-9]$/.test(e.key)){
     e.preventDefault(); buf+=e.key; clearTimeout(bufT);
@@ -912,28 +948,107 @@ async function buildPdf(){
   $('#progress').textContent='';
   return new Blob([bytes], {type:'application/pdf'});
 }
+/* ---------- salvar: pasta "NOME - POSTO - EMPRESA - CIDADE" ---------- */
+const REQUIRED = [['#nome','nome do candidato'],['#v_posto','posto'],['#v_empresa','empresa'],['#v_cidade','cidade']];
+// nome válido para pasta/arquivo no Windows
+const safeName = s => s.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().replace(/[. ]+$/,'').toLocaleUpperCase('pt-BR');
+const exportName = () => REQUIRED.map(([s])=>safeName($(s).value)).join(' - ').slice(0,180);
+// a pasta escolhida fica guardada neste navegador (IndexedDB), para não perguntar toda vez
+function kv(mode, fn){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('rh-organizador',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('kv');
+    r.onerror=()=>rej(r.error);
+    r.onsuccess=()=>{ const tx=r.result.transaction('kv',mode), q=fn(tx.objectStore('kv')); tx.oncomplete=()=>res(q && q.result); tx.onerror=()=>rej(tx.error); };
+  });
+}
+const kvGet = k => kv('readonly', s=>s.get(k)).catch(()=>null);
+const kvSet = (k,v) => kv('readwrite', s=>s.put(v,k)).catch(()=>null);
+async function pickFolder(change){
+  let h = change ? null : await kvGet('pasta');
+  if(h){
+    let perm = await h.queryPermission({mode:'readwrite'});
+    if(perm!=='granted') perm = await h.requestPermission({mode:'readwrite'});
+    if(perm==='granted') return h;
+  }
+  h = await window.showDirectoryPicker({id:'rh-pdfs', mode:'readwrite'}); // cancelar = AbortError
+  await kvSet('pasta', h); showFolder(h);
+  return h;
+}
+function showFolder(h){ $('#btnFolder').title = h ? `Os PDFs são salvos em: ${h.name}\nClique para trocar a pasta` : 'Escolher a pasta onde os PDFs são salvos'; }
 async function doExport(mode){
-  if(!$('#nome').value.trim()){
-    $('#nome').classList.add('need'); $('#nome').focus();
-    toast('Digite o nome do candidato antes de imprimir ou baixar o PDF');
+  const miss = REQUIRED.filter(([s])=>!$(s).value.trim());
+  if(miss.length){
+    miss.forEach(([s])=>$(s).classList.add('need')); $(miss[0][0]).focus();
+    toast('Preencha antes de imprimir ou baixar: '+miss.map(x=>x[1]).join(', '), 5000);
     return;
+  }
+  const base = exportName();
+  // a pasta é pedida antes de montar o PDF: o navegador só deixa escolher logo depois do clique
+  let dir = null;
+  if(mode==='save' && window.showDirectoryPicker){
+    try{ dir = await pickFolder(false); }
+    catch(e){ if(e.name==='AbortError'){ toast('Escolha a pasta onde salvar os PDFs', 4000); return; } console.error(e); }
   }
   const un = items.filter(i=>i.cat==null).length;
   if(un && !confirm(`${un} página(s) ainda sem classificação. Elas vão para o final do PDF.\n\nContinuar mesmo assim?`)) return;
   const btns=[$('#btnSave'),$('#btnPrint')]; btns.forEach(b=>b.disabled=true);
   try{
     const blob = await buildPdf();
-    const url = URL.createObjectURL(blob);
-    if(mode==='print'){ window.open(url,'_blank'); toast('PDF aberto em nova aba — use Ctrl+P para imprimir'); }
-    else {
-      const nome = $('#nome').value.trim().replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ');
-      const a=document.createElement('a'); a.href=url; a.download=(nome?nome+' - ':'')+'Documentação organizada.pdf';
-      document.body.appendChild(a); a.click(); a.remove(); toast('PDF baixado');
+    if(mode==='print'){
+      const url = URL.createObjectURL(blob);
+      window.open(url,'_blank'); toast('PDF aberto em nova aba — use Ctrl+P para imprimir');
+      setTimeout(()=>URL.revokeObjectURL(url), 120000);
+    } else if(dir){
+      const sub = await dir.getDirectoryHandle(base, {create:true});
+      let exists = true; try{ await sub.getFileHandle(base+'.pdf'); }catch(e){ exists = false; }
+      if(exists && !confirm(`Já existe "${base}.pdf" nessa pasta.\n\nSubstituir pelo novo?`)){ updateButtons(); return; }
+      const w = await (await sub.getFileHandle(base+'.pdf', {create:true})).createWritable();
+      await w.write(blob); await w.close();
+      toast(`PDF salvo em: ${dir.name}\\${base}`, 6000);
+    } else {
+      // navegador sem permissão para criar pastas: baixa só o arquivo, já com o nome certo
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=base+'.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('PDF baixado (este navegador não deixa criar a pasta)', 5000);
+      setTimeout(()=>URL.revokeObjectURL(url), 120000);
     }
-    setTimeout(()=>URL.revokeObjectURL(url), 120000);
-  }catch(e){ console.error(e); toast('Erro ao gerar o PDF: '+e.message); $('#progress').textContent=''; }
+  }catch(e){ console.error(e); toast('Erro ao gerar o PDF: '+e.message, 6000); $('#progress').textContent=''; }
   updateButtons();
 }
+$('#btnFolder').onclick = async ()=>{
+  if(!window.showDirectoryPicker){ toast('Este navegador não deixa escolher a pasta. Use o Chrome ou o Edge.', 5000); return; }
+  try{ const h=await pickFolder(true); toast(`Os PDFs serão salvos em: ${h.name}`, 4000); }catch(e){ if(e.name!=='AbortError') console.error(e); }
+};
+kvGet('pasta').then(h=>showFolder(h));
+
+/* ---------- documentos faltantes + mensagem de WhatsApp ---------- */
+let missOpen=false, missOff=new Set();
+const missingDocs = () => { const m=counts(); return CATS.filter(c=>!c.opt && !m[c.k]); };
+const docUpper = s => String(s).replace(/\bdocs?\b\.?/gi,'documentação').toLocaleUpperCase('pt-BR');
+function missMessage(){
+  const its=missingDocs().filter(c=>!missOff.has(c.k));
+  return its.length ? '*DOCUMENTOS FALTANTES*\n'+its.map(c=>'• '+docUpper(c.n)).join('\n') : '';
+}
+function fillMiss(){
+  const its=missingDocs();
+  $('#mmList').innerHTML = its.length ? its.map(c=>`<label class="mm-item"><input type="checkbox" data-k="${esc(c.k)}"${missOff.has(c.k)?'':' checked'}> <b>${esc(c.k)}</b> ${esc(c.n)}</label>`).join('')
+    : '<div class="hint">Nenhum documento obrigatório faltando.</div>';
+  $('#mmText').value = missMessage();
+  const pend=items.filter(i=>i.cat==null).length;
+  $('#mmWarn').textContent = reading ? 'A leitura ainda não terminou: a lista pode mudar.'
+    : pend ? `${pend} página(s) sem classificação: algum desses documentos pode estar nelas.` : '';
+}
+function openMiss(){ missOff=new Set(); missOpen=true; $('#missModal').classList.add('on'); fillMiss(); }
+function closeMiss(){ missOpen=false; $('#missModal').classList.remove('on'); }
+$('#summary').addEventListener('click', e=>{ if(e.target.closest('#btnMiss')) openMiss(); });
+$('#mmList').addEventListener('change', e=>{ const k=e.target.dataset.k; if(!k) return; e.target.checked ? missOff.delete(k) : missOff.add(k); $('#mmText').value=missMessage(); });
+$('#mmClose').onclick=closeMiss;
+$('#missModal').addEventListener('click', e=>{ if(e.target.id==='missModal') closeMiss(); });
+$('#missModal').addEventListener('keydown', e=>{ if(e.key==='Escape') closeMiss(); });
+$('#mmCopy').onclick=async ()=>{ await copyText($('#mmText').value); toast('Mensagem copiada: é só colar no WhatsApp'); };
+$('#mmWa').onclick=()=>{ window.open('https://wa.me/?text='+encodeURIComponent($('#mmText').value),'_blank','noopener'); };
 $('#btnSave').onclick=()=>doExport('save');
 $('#btnPrint').onclick=()=>doExport('print');
 

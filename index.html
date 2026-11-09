@@ -18,12 +18,19 @@
   <button id="btnLock">Bloquear</button>
   <button id="btnPrint" disabled>Abrir para imprimir</button>
   <button id="btnSave" class="primary" disabled>Baixar PDF organizado</button>
+  <button id="btnFolder" title="Escolher a pasta onde os PDFs são salvos">📁 Pasta</button>
   <input type="file" id="file" multiple accept="application/pdf,image/*" hidden>
 </header>
 <div class="layout">
   <aside>
     <details class="person" id="person">
-      <summary><span>Dados do candidato</span><button id="btnCopyPerson" type="button">Copiar</button></summary>
+      <summary><span>Dados do candidato</span>
+        <div class="ptools">
+          <label class="switch" id="readToggle" title="Ler nome, CPF, nascimento e mãe nos documentos"><input type="checkbox" id="readData" checked tabindex="-1"><i></i>Ler</label>
+          <button id="btnCopyPerson" type="button">Copiar</button>
+        </div>
+      </summary>
+      <p class="hint" id="personOff" hidden>Leitura dos dados desligada: o site não lê nome, CPF, nascimento e mãe nos documentos. Nome, posto, empresa e cidade continuam obrigatórios.</p>
       <label>Nome completo<input type="text" id="p_nome" autocomplete="off"><small id="pi_nome"></small></label>
       <label>CPF<input type="text" id="p_cpf" autocomplete="off"><small id="pi_cpf"></small></label>
       <label>Data de nascimento<input type="text" id="p_nasc" autocomplete="off"><small id="pi_nasc"></small></label>
@@ -56,6 +63,14 @@
 </div>
 <div id="modal"><div class="bar"><button id="mPrev">←</button><span id="mInfo"></span><button id="mNext">→</button><button id="mOk">✓ Está certo (V)</button><button id="mRot">Girar (R)</button><button id="mClose">Fechar (Esc)</button></div><div id="mBody"></div></div>
 <div id="toast"></div>
+<div id="missModal"><div class="lm mm" role="dialog" aria-label="Documentos faltantes">
+  <div class="lm-head"><h2>Documentos faltantes</h2><button id="mmClose" title="Fechar">✕</button></div>
+  <div class="lm-cols">
+    <div class="lm-col">Faltando (desmarque o que não quiser pedir)<div id="mmList"></div></div>
+    <label class="lm-col">Mensagem para o WhatsApp<textarea id="mmText" spellcheck="false"></textarea></label>
+  </div>
+  <div class="lm-foot"><span id="mmWarn"></span><div class="grow"></div><button id="mmWa">Abrir no WhatsApp</button><button id="mmCopy" class="primary">Copiar mensagem</button></div>
+</div></div>
 <div id="listModal"><div class="lm" role="dialog" aria-label="Listas de documentos">
   <div class="lm-head"><h2>Listas de documentos</h2><button id="lmClose" title="Fechar">✕</button></div>
   <div class="lm-row">
